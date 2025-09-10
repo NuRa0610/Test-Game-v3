@@ -1,6 +1,6 @@
-AI_Basic/Library/* 
-AI_Basic/Logs/* 
-AI_Basic/Temp/* 
+3C/Library/* 
+3C/Logs/* 
+3C/Temp/* 
 
 .vsconfig 
 *.sln 
