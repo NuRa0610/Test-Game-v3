@@ -4,17 +4,193 @@ using UnityEngine;
 
 public class PlayerMovement : MonoBehaviour
 {
+    [SerializeField]
+    private InputManager _input;
+
+    [SerializeField]
+    private float _rotationSmoothTime = 0.1f;
+    private float _rotationSmoothVelocity;
+
     [SerializeField] 
     private float _walkSpeed;
 
     [SerializeField]
-    private InputManager _input;
-    // Start is called before the first frame update
+    private float _sprintSpeed;
+
+    [SerializeField]
+    private float _walkSprintTransition;
+    private float _speed;
+
+    [SerializeField]
+    private float _jumpForce;
+
+    [SerializeField]
+    private Transform _groundCheckDistance;
+
+    [SerializeField]
+    private float _groundRadius;
+
+    [SerializeField]
+    private LayerMask _groundLayer;
+    private bool _isGrounded;
+
+    [SerializeField]
+    private Vector3 _upperStepOffset;
+
+    [SerializeField]
+    private float _stepCheckDistance;
+
+    [SerializeField]
+    private float _stepForce;
+
+    [SerializeField]
+    private Transform _climbDetector;
+
+    [SerializeField]
+    private float _climbCheckDistance;
+
+    [SerializeField]
+    private LayerMask _climbableLayer;
+
+    [SerializeField]
+    private Vector3 _climbOffset;
+
+    [SerializeField]
+    private float _climbSpeed;
+
+    private PlayerStance _playerStance;
+
+    private Rigidbody _rigidbody;
+
+    private void Awake()
+    {
+        _rigidbody = GetComponent<Rigidbody>();
+        _speed = _walkSpeed;
+        _input.OnJumpInput += Jump;
+        _playerStance = PlayerStance.Stand;
+    }
+
+    private void Start()
+    {
+        _input.OnMoveInput += Move; // subscribe to the event
+        _input.OnSprintInput += Sprint;
+        //_input.OnJumpInput += Jump;
+        _input.OnClimbInput += StartClimb;
+        _input.OnCancelClimb += CancelClimb;
+    }
+
+    private void Update()
+    {
+        CheckIsGrounded();
+        CheckStepClimb();
+    }
+
+    private void OnDestroy()
+    {
+        _input.OnMoveInput -= Move; // unsubscribe from the event
+        _input.OnSprintInput -= Sprint;
+        _input.OnJumpInput -= Jump;
+        _input.OnClimbInput -= StartClimb;
+        _input.OnCancelClimb -= CancelClimb;
+    }
 
     private void Move(Vector2 axisDirection)
     {
-        Vector3 moveDirection = new Vector3(axisDirection.x, 0, axisDirection.y);
-        Debug.Log(moveDirection);
+        Vector3 moveDirection = Vector3.zero;
+        bool isPlayerStanding = _playerStance == PlayerStance.Stand;
+        bool isPlayerClimbing = _playerStance == PlayerStance.Climb;
+
+        if (isPlayerStanding)
+        {
+            if (axisDirection.magnitude >= 0.1)
+            {
+                float targetAngle = Mathf.Atan2(axisDirection.x, axisDirection.y) * Mathf.Rad2Deg;
+                float angle = Mathf.SmoothDampAngle(transform.eulerAngles.y, targetAngle, ref _rotationSmoothVelocity, _rotationSmoothTime);
+                //smoothen the rotation speed and angle
+                transform.rotation = Quaternion.Euler(0f, angle, 0f);
+                moveDirection = Quaternion.Euler(0f, targetAngle, 0f) * Vector3.forward;
+                //Vector3 moveDirection = new Vector3(axisDirection.x, 0, axisDirection.y);
+                Debug.Log(moveDirection);
+                _rigidbody.AddForce(moveDirection * _speed * Time.deltaTime);
+                //delta time -> based on frame rate
+            }
+        } 
+        else if (isPlayerClimbing)
+        {
+            Vector3 horizontal = axisDirection.x * transform.right;
+            Vector3 vertical = axisDirection.y * transform.up;
+            moveDirection = (horizontal + vertical).normalized;
+            _rigidbody.AddForce(moveDirection * _climbSpeed * Time.deltaTime);
+        }
     }
-    
+
+    public void Sprint(bool isSprinting)
+    {
+        if (isSprinting)
+        {
+            if (_speed < _sprintSpeed)
+            {
+                _speed = _speed + _walkSprintTransition * Time.deltaTime;
+            }
+        }
+        else
+        {
+            if (_speed > _walkSpeed)
+            {
+                _speed = _speed - _walkSprintTransition * Time.deltaTime;
+            }
+        }
+    }
+
+    public void Jump()
+    {
+        if (_isGrounded)
+        {
+            Vector3 jumpDirection = Vector3.up;
+            _rigidbody.AddForce(jumpDirection * _jumpForce, ForceMode.Impulse); 
+            //remove * Time.deltaTime (10.000) cause make the jump inconsistent
+        }
+    }
+
+    private void CheckIsGrounded()
+    {
+        _isGrounded = Physics.CheckSphere(_groundCheckDistance.position, _groundRadius, _groundLayer);
+    }
+
+    private void CheckStepClimb()
+    {
+        bool isHitLower = Physics.Raycast(_groundCheckDistance.position, transform.forward, _stepCheckDistance);
+        bool isHitUpper = Physics.Raycast(_groundCheckDistance.position + _upperStepOffset, transform.forward, _stepCheckDistance);
+
+        if (isHitLower && !isHitUpper)
+        {
+            _rigidbody.AddForce(0, _stepForce, 0);
+        }
+    }
+
+    private void StartClimb()
+    {
+        bool isInFrontOfClimbable = Physics.Raycast(_climbDetector.position, transform.forward, out RaycastHit hit, _climbCheckDistance, _climbableLayer);
+        bool isNotClimbing = _playerStance != PlayerStance.Climb;
+
+        if (isInFrontOfClimbable && isNotClimbing && _isGrounded)
+        {
+            Vector3 offset = (transform.forward * _climbOffset.z) + (Vector3.up * _climbOffset.y);
+            transform.position = hit.point - offset;
+            _playerStance = PlayerStance.Climb;
+            _rigidbody.useGravity = false;
+        }
+    }
+
+    public void CancelClimb()
+    {
+        //bool isClimbing = _playerStance == PlayerStance.Climb;
+
+        if (_playerStance == PlayerStance.Climb)
+        {
+            _playerStance = PlayerStance.Stand;
+            _rigidbody.useGravity = true;
+            transform.position -= transform.forward * 1f;
+        }
+    }
 }

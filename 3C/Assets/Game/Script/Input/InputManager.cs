@@ -5,6 +5,10 @@ public class InputManager : MonoBehaviour
 {
     // Start is called before the first frame update
     public Action<Vector2> OnMoveInput;
+    public Action<bool> OnSprintInput;
+    public Action OnJumpInput;
+    public Action OnClimbInput;
+    public Action OnCancelClimb;
 
     private void Update()
     {
@@ -33,8 +37,8 @@ public class InputManager : MonoBehaviour
         {
             OnMoveInput(inputAxis);
         }
-        Debug.Log("Vertical Axis: " + (verticalAxis));
-        Debug.Log("Horizontal Axis: " + (horizontalAxis));
+        //Debug.Log("Vertical Axis: " + (verticalAxis));
+        //Debug.Log("Horizontal Axis: " + (horizontalAxis));
     }
 
     private void CheckSprintInput()
@@ -43,12 +47,21 @@ public class InputManager : MonoBehaviour
 
         if (isHoldSprint)
         {
-            Debug.Log("Sprinting");
+            //Debug.Log("Sprinting");
+            if (OnSprintInput != null)
+            {
+                Debug.Log("Sprinting");
+                OnSprintInput(true);
+            }
         }
 
         else
         {
-            Debug.Log("Not Sprinting");
+            //Debug.Log("Not Sprinting");
+            if (OnSprintInput != null)
+            {
+                OnSprintInput(false);
+            }
         }
     }
 
@@ -58,7 +71,12 @@ public class InputManager : MonoBehaviour
 
         if (isPressJump)
         {
-            Debug.Log("Jump");
+            //Debug.Log("Jump");
+            if (OnJumpInput != null)
+            {   
+                Debug.Log("Jump");
+                OnJumpInput();
+            }
         }
     }
 
@@ -92,7 +110,8 @@ public class InputManager : MonoBehaviour
 
         if (isPressClimb)
         {
-            Debug.Log("Climb");
+            //Debug.Log("Climb");
+            OnClimbInput();
         }
     }
 
@@ -116,7 +135,11 @@ public class InputManager : MonoBehaviour
 
         if (isPressCancel)
         {
-            Debug.Log("Cancel Climb/Glide");
+            if (OnCancelClimb != null)
+            {
+                Debug.Log("Cancel");
+                OnCancelClimb();
+            }
         }
     }
 
