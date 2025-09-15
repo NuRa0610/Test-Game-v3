@@ -58,6 +58,12 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField]
     private float _climbSpeed;
 
+    [SerializeField]
+    private Transform _cameraTransform;
+
+    [SerializeField]
+    private CameraManager _cameraManager;
+
     private PlayerStance _playerStance;
 
     private Rigidbody _rigidbody;
@@ -68,6 +74,13 @@ public class PlayerMovement : MonoBehaviour
         _speed = _walkSpeed;
         _input.OnJumpInput += Jump;
         _playerStance = PlayerStance.Stand;
+        HideAndLockCursor();
+    }
+
+    private void HideAndLockCursor()
+    {
+        Cursor.visible = false;
+        Cursor.lockState = CursorLockMode.Locked;
     }
 
     private void Start()
@@ -102,18 +115,32 @@ public class PlayerMovement : MonoBehaviour
 
         if (isPlayerStanding)
         {
-            if (axisDirection.magnitude >= 0.1)
-            {
-                float targetAngle = Mathf.Atan2(axisDirection.x, axisDirection.y) * Mathf.Rad2Deg;
-                float angle = Mathf.SmoothDampAngle(transform.eulerAngles.y, targetAngle, ref _rotationSmoothVelocity, _rotationSmoothTime);
-                //smoothen the rotation speed and angle
-                transform.rotation = Quaternion.Euler(0f, angle, 0f);
-                moveDirection = Quaternion.Euler(0f, targetAngle, 0f) * Vector3.forward;
-                //Vector3 moveDirection = new Vector3(axisDirection.x, 0, axisDirection.y);
-                Debug.Log(moveDirection);
-                _rigidbody.AddForce(moveDirection * _speed * Time.deltaTime);
-                //delta time -> based on frame rate
-            }
+            switch (_cameraManager.CameraState)
+                {
+                    case CameraState.ThirdPerson:
+                        if (axisDirection.magnitude >= 0.1)
+                        {
+                            float targetAngle = Mathf.Atan2(axisDirection.x, axisDirection.y) * Mathf.Rad2Deg + _cameraTransform.eulerAngles.y;
+                            float angle = Mathf.SmoothDampAngle(transform.eulerAngles.y, targetAngle, ref _rotationSmoothVelocity, _rotationSmoothTime);
+                            //smoothen the rotation speed and angle
+                            transform.rotation = Quaternion.Euler(0f, angle, 0f);
+                            moveDirection = Quaternion.Euler(0f, targetAngle, 0f) * Vector3.forward;
+                            //Vector3 moveDirection = new Vector3(axisDirection.x, 0, axisDirection.y);
+                            Debug.Log(moveDirection);
+                            _rigidbody.AddForce(moveDirection * _speed * Time.deltaTime);
+                            //delta time -> based on frame rate
+                        }
+                        break;
+                    case CameraState.FirstPerson:
+                        transform.rotation = Quaternion.Euler(0f, _cameraTransform.eulerAngles.y, 0f);
+                        Vector3 horizontal = axisDirection.x * transform.right;
+                        Vector3 vertical = axisDirection.y * transform.forward;
+                        moveDirection = (horizontal + vertical).normalized;
+                        _rigidbody.AddForce(moveDirection * _speed * Time.deltaTime);
+                        break;
+                    default:
+                        break;
+                }
         } 
         else if (isPlayerClimbing)
         {
@@ -179,6 +206,9 @@ public class PlayerMovement : MonoBehaviour
             transform.position = hit.point - offset;
             _playerStance = PlayerStance.Climb;
             _rigidbody.useGravity = false;
+            _cameraManager.SetFPSClampedCamera(true, transform.rotation.eulerAngles);
+            _cameraManager.SetTPSFieldOfView(70);
+
         }
     }
 
@@ -191,6 +221,8 @@ public class PlayerMovement : MonoBehaviour
             _playerStance = PlayerStance.Stand;
             _rigidbody.useGravity = true;
             transform.position -= transform.forward * 1f;
+            _cameraManager.SetFPSClampedCamera(false, transform.rotation.eulerAngles);
+            _cameraManager.SetTPSFieldOfView(40);
         }
     }
 }
