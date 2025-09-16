@@ -62,10 +62,38 @@ public class PlayerMovement : MonoBehaviour
     private float _crouchSpeed;
 
     [SerializeField]
+    private float _glideSpeed;
+
+    [SerializeField]
+    private Vector3 _glideRotationSpeed;
+
+    [SerializeField]
+    private float _minGlideRotationX;
+
+    [SerializeField]
+    private float _maxGlideRotationX;
+
+    [SerializeField]
+    private float _airDrag;
+
+    [SerializeField]
     private Transform _cameraTransform;
 
     [SerializeField]
     private CameraManager _cameraManager;
+
+    [SerializeField]
+    private float _resetComboInterval;
+    private Coroutine _resetCombo;
+
+    [SerializeField]
+    private Transform _hitDetector;
+
+    [SerializeField]
+    private float _hitDetectorRadius;
+
+    [SerializeField]
+    private LayerMask _hitLayer;
 
     private PlayerStance _playerStance;
 
@@ -74,6 +102,9 @@ public class PlayerMovement : MonoBehaviour
     private Rigidbody _rigidbody;
 
     private CapsuleCollider _collider;
+
+    private bool _isPunching;
+    private int _combo = 0;
 
     private void Awake()
     {
@@ -100,6 +131,9 @@ public class PlayerMovement : MonoBehaviour
         _input.OnClimbInput += StartClimb;
         _input.OnCancelClimb += CancelClimb;
         _input.OnCrouchInput += Crouch;
+        _input.OnGlideInput += StartGlide;
+        _input.OnCancelGlide += CancelGlide;
+        _input.OnAttackInput += Punch;
         _cameraManager.OnChangePerspective += ChangePerspective;
 
     }
@@ -108,6 +142,7 @@ public class PlayerMovement : MonoBehaviour
     {
         CheckIsGrounded();
         CheckStepClimb();
+        Glide();
     }
 
     private void OnDestroy()
@@ -118,6 +153,9 @@ public class PlayerMovement : MonoBehaviour
         _input.OnClimbInput -= StartClimb;
         _input.OnCancelClimb -= CancelClimb;
         _input.OnCrouchInput -= Crouch;
+        _input.OnGlideInput -= StartGlide;
+        _input.OnCancelGlide -= CancelGlide;
+        _input.OnAttackInput -= Punch;
         _cameraManager.OnChangePerspective -= ChangePerspective;
     }
 
@@ -127,8 +165,9 @@ public class PlayerMovement : MonoBehaviour
         bool isPlayerStanding = _playerStance == PlayerStance.Stand;
         bool isPlayerClimbing = _playerStance == PlayerStance.Climb;
         bool isPlayerCrouching = _playerStance == PlayerStance.Crouch;
+        bool isPlayerGliding = _playerStance == PlayerStance.Glide;
 
-        if (isPlayerStanding || isPlayerCrouching)
+        if ((isPlayerStanding || isPlayerCrouching) && !_isPunching)
         {
             Vector3 velocity = new Vector3(_rigidbody.velocity.x, 0, _rigidbody.velocity.z);
             _animator.SetFloat("Velocity", velocity.magnitude * axisDirection.magnitude);
@@ -167,19 +206,20 @@ public class PlayerMovement : MonoBehaviour
             Vector3 vertical = axisDirection.y * transform.up;
             moveDirection = (horizontal + vertical).normalized;
             _rigidbody.AddForce(moveDirection * _climbSpeed * Time.deltaTime);
+
+            Vector3 velocity = new Vector3(_rigidbody.velocity.x, _rigidbody.velocity.y, 0);
+            _animator.SetFloat("ClimbVelocityY", velocity.magnitude * axisDirection.y);
+            _animator.SetFloat("ClimbVelocityX", velocity.magnitude * axisDirection.x);
         }
-
-        /* else if (isPlayerCrouching)
+        else if (isPlayerGliding)
         {
-            Vector3 horizontal = axisDirection.x * transform.right;
-            Vector3 vertical = axisDirection.y * transform.forward;
-            moveDirection = (horizontal + vertical).normalized;
-            _rigidbody.AddForce(moveDirection * _crouchSpeed * Time.deltaTime); 
-
-            Vector3 velocity = new Vector3(_rigidbody.velocity.x, 0, _rigidbody.velocity.z);
-            _animator.SetFloat("Velocity", velocity.magnitude * axisDirection.magnitude);
-        } */
-
+            Vector3 rotationDegree = transform.rotation.eulerAngles;
+            rotationDegree.x += _glideRotationSpeed.x * axisDirection.y * Time.deltaTime;
+            rotationDegree.x += Mathf.Clamp(rotationDegree.x, _minGlideRotationX, _maxGlideRotationX);
+            rotationDegree.y += _glideRotationSpeed.y * axisDirection.x * Time.deltaTime;
+            rotationDegree.z += _glideRotationSpeed.z * axisDirection.x * Time.deltaTime;
+            transform.rotation = Quaternion.Euler(rotationDegree);
+        }        
     }
 
     public void Sprint(bool isSprinting)
@@ -215,6 +255,10 @@ public class PlayerMovement : MonoBehaviour
     {
         _isGrounded = Physics.CheckSphere(_groundCheckDistance.position, _groundRadius, _groundLayer);
         _animator.SetBool("IsGrounded", _isGrounded);
+        if (_isGrounded)
+        {
+            CancelGlide();
+        }
     }
 
     private void CheckStepClimb()
@@ -238,9 +282,11 @@ public class PlayerMovement : MonoBehaviour
             Vector3 offset = (transform.forward * _climbOffset.z) + (Vector3.up * _climbOffset.y);
             transform.position = hit.point - offset;
             _playerStance = PlayerStance.Climb;
+            _animator.SetBool("IsClimbing", true);
             _rigidbody.useGravity = false;
             _cameraManager.SetFPSClampedCamera(true, transform.rotation.eulerAngles);
             _cameraManager.SetTPSFieldOfView(70);
+            _collider.center = Vector3.up * 1.3f;
 
         }
     }
@@ -252,10 +298,12 @@ public class PlayerMovement : MonoBehaviour
         if (_playerStance == PlayerStance.Climb)
         {
             _playerStance = PlayerStance.Stand;
+            _animator.SetBool("IsClimbing", false);
             _rigidbody.useGravity = true;
             transform.position -= transform.forward * 1f;
             _cameraManager.SetFPSClampedCamera(false, transform.rotation.eulerAngles);
             _cameraManager.SetTPSFieldOfView(40);
+            _collider.center = Vector3.up * 0.9f;
         }
     }
 
@@ -276,6 +324,86 @@ public class PlayerMovement : MonoBehaviour
             _speed = _walkSpeed;
             _collider.height = 2f;
             _collider.center = Vector3.up * 1f;
+        }
+    }
+
+    private void StartGlide()
+    {
+        if(_playerStance != PlayerStance.Glide && !_isGrounded)
+        {
+            _playerStance = PlayerStance.Glide;
+            _animator.SetBool("IsGliding", true);
+            _cameraManager.SetFPSClampedCamera(true, transform.rotation.eulerAngles);
+        }
+    }
+
+    private void CancelGlide()
+    {
+        if(_playerStance == PlayerStance.Glide)
+        {
+            _playerStance = PlayerStance.Stand;
+            _animator.SetBool("IsGliding", false);
+            _cameraManager.SetFPSClampedCamera(false, transform.rotation.eulerAngles);
+        }
+    }
+
+    private void Glide()
+    {
+        if(_playerStance == PlayerStance.Glide)
+        {
+            Vector3 playerRotation = transform.rotation.eulerAngles;
+            float lift = playerRotation.x;
+            Vector3 upForce = transform.up * (lift + _airDrag);
+            Vector3 forwardForce = transform.forward * _glideSpeed;
+            Vector3 totalForce = upForce + forwardForce;
+            _rigidbody.AddForce(totalForce * Time.deltaTime);
+        }
+    }
+
+    private void Punch()
+    {
+        if (!_isPunching && _playerStance == PlayerStance.Stand)
+        {
+            _isPunching = true;
+            if (_combo < 3)
+            {
+                _combo = _combo + 1;
+            }
+            else
+            {
+                _combo = 1;
+            }
+            _animator.SetInteger("Combo", _combo);
+            _animator.SetTrigger("Punch");
+        }
+    }
+
+    private void EndPunch()
+    {
+        _isPunching = false;
+        if (_resetCombo != null)
+        {
+            StopCoroutine(_resetCombo);
+        }
+        _resetCombo = StartCoroutine(ResetCombo());
+    }
+
+    private IEnumerator ResetCombo()
+    {
+        yield return new WaitForSeconds(_resetComboInterval);
+        _combo = 0;
+    }
+
+    private void Hit()
+    {
+        Collider[] hitObjects = Physics.OverlapSphere(_hitDetector.position, _hitDetectorRadius, _hitLayer);
+        for (int i = 0; i < hitObjects.Length; i++)
+        {
+            if (hitObjects[i].gameObject != null)
+            {
+                Destroy(hitObjects[i].gameObject);
+                //Debug.Log("Hit " + hitObjects[i].name);
+            }
         }
     }
 
