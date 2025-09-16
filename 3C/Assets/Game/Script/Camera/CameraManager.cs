@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -16,6 +17,8 @@ public class CameraManager : MonoBehaviour
 
     [SerializeField]
     private InputManager _inputManager;
+
+    public Action OnChangePerspective;
 
       
     // Start is called before the first frame update
@@ -54,6 +57,7 @@ public class CameraManager : MonoBehaviour
 
     private void SwitchCamera()
     {
+        OnChangePerspective();
         if (CameraState == CameraState.ThirdPerson)
         {
             CameraState = CameraState.FirstPerson;
@@ -71,6 +75,5 @@ public class CameraManager : MonoBehaviour
     public void SetTPSFieldOfView(float FieldOfView)
     {
         _tpsCamera.m_Lens.FieldOfView = FieldOfView;
-    }
-    
-}
+    } 
+};

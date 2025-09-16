@@ -59,6 +59,9 @@ public class PlayerMovement : MonoBehaviour
     private float _climbSpeed;
 
     [SerializeField]
+    private float _crouchSpeed;
+
+    [SerializeField]
     private Transform _cameraTransform;
 
     [SerializeField]
@@ -66,14 +69,20 @@ public class PlayerMovement : MonoBehaviour
 
     private PlayerStance _playerStance;
 
+    private Animator _animator;
+
     private Rigidbody _rigidbody;
+
+    private CapsuleCollider _collider;
 
     private void Awake()
     {
         _rigidbody = GetComponent<Rigidbody>();
+        _collider = GetComponent<CapsuleCollider>();
         _speed = _walkSpeed;
         _input.OnJumpInput += Jump;
         _playerStance = PlayerStance.Stand;
+        _animator = GetComponent<Animator>();
         HideAndLockCursor();
     }
 
@@ -90,6 +99,9 @@ public class PlayerMovement : MonoBehaviour
         //_input.OnJumpInput += Jump;
         _input.OnClimbInput += StartClimb;
         _input.OnCancelClimb += CancelClimb;
+        _input.OnCrouchInput += Crouch;
+        _cameraManager.OnChangePerspective += ChangePerspective;
+
     }
 
     private void Update()
@@ -105,6 +117,8 @@ public class PlayerMovement : MonoBehaviour
         _input.OnJumpInput -= Jump;
         _input.OnClimbInput -= StartClimb;
         _input.OnCancelClimb -= CancelClimb;
+        _input.OnCrouchInput -= Crouch;
+        _cameraManager.OnChangePerspective -= ChangePerspective;
     }
 
     private void Move(Vector2 axisDirection)
@@ -112,9 +126,14 @@ public class PlayerMovement : MonoBehaviour
         Vector3 moveDirection = Vector3.zero;
         bool isPlayerStanding = _playerStance == PlayerStance.Stand;
         bool isPlayerClimbing = _playerStance == PlayerStance.Climb;
+        bool isPlayerCrouching = _playerStance == PlayerStance.Crouch;
 
-        if (isPlayerStanding)
+        if (isPlayerStanding || isPlayerCrouching)
         {
+            Vector3 velocity = new Vector3(_rigidbody.velocity.x, 0, _rigidbody.velocity.z);
+            _animator.SetFloat("Velocity", velocity.magnitude * axisDirection.magnitude);
+            _animator.SetFloat("VelocityY", velocity.magnitude * axisDirection.y);
+            _animator.SetFloat("VelocityX", velocity.magnitude * axisDirection.x);
             switch (_cameraManager.CameraState)
                 {
                     case CameraState.ThirdPerson:
@@ -126,7 +145,7 @@ public class PlayerMovement : MonoBehaviour
                             transform.rotation = Quaternion.Euler(0f, angle, 0f);
                             moveDirection = Quaternion.Euler(0f, targetAngle, 0f) * Vector3.forward;
                             //Vector3 moveDirection = new Vector3(axisDirection.x, 0, axisDirection.y);
-                            Debug.Log(moveDirection);
+                            //Debug.Log(moveDirection);
                             _rigidbody.AddForce(moveDirection * _speed * Time.deltaTime);
                             //delta time -> based on frame rate
                         }
@@ -149,6 +168,18 @@ public class PlayerMovement : MonoBehaviour
             moveDirection = (horizontal + vertical).normalized;
             _rigidbody.AddForce(moveDirection * _climbSpeed * Time.deltaTime);
         }
+
+        /* else if (isPlayerCrouching)
+        {
+            Vector3 horizontal = axisDirection.x * transform.right;
+            Vector3 vertical = axisDirection.y * transform.forward;
+            moveDirection = (horizontal + vertical).normalized;
+            _rigidbody.AddForce(moveDirection * _crouchSpeed * Time.deltaTime); 
+
+            Vector3 velocity = new Vector3(_rigidbody.velocity.x, 0, _rigidbody.velocity.z);
+            _animator.SetFloat("Velocity", velocity.magnitude * axisDirection.magnitude);
+        } */
+
     }
 
     public void Sprint(bool isSprinting)
@@ -175,6 +206,7 @@ public class PlayerMovement : MonoBehaviour
         {
             Vector3 jumpDirection = Vector3.up;
             _rigidbody.AddForce(jumpDirection * _jumpForce, ForceMode.Impulse); 
+            _animator.SetTrigger("Jump");
             //remove * Time.deltaTime (10.000) cause make the jump inconsistent
         }
     }
@@ -182,6 +214,7 @@ public class PlayerMovement : MonoBehaviour
     private void CheckIsGrounded()
     {
         _isGrounded = Physics.CheckSphere(_groundCheckDistance.position, _groundRadius, _groundLayer);
+        _animator.SetBool("IsGrounded", _isGrounded);
     }
 
     private void CheckStepClimb()
@@ -224,5 +257,30 @@ public class PlayerMovement : MonoBehaviour
             _cameraManager.SetFPSClampedCamera(false, transform.rotation.eulerAngles);
             _cameraManager.SetTPSFieldOfView(40);
         }
+    }
+
+    private void Crouch()
+    {
+        if (_playerStance == PlayerStance.Stand)
+        {
+            _playerStance = PlayerStance.Crouch;
+            _animator.SetBool("IsCrouch", true);
+            _speed = _crouchSpeed;
+            _collider.height = 1.3f;
+            _collider.center = Vector3.up * 0.65f;
+        }
+        else if (_playerStance == PlayerStance.Crouch)
+        {
+            _playerStance = PlayerStance.Stand;
+            _animator.SetBool("IsCrouch", false);
+            _speed = _walkSpeed;
+            _collider.height = 2f;
+            _collider.center = Vector3.up * 1f;
+        }
+    }
+
+    private void ChangePerspective()
+    {
+        _animator.SetTrigger("ChangePerspective");
     }
 }
